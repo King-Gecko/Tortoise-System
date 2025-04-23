@@ -1,0 +1,116 @@
+#include <Pixy2.h>
+#include <Servo.h>
+
+Pixy2 pixy;
+Servo headServo;
+const int servoPin = 9;
+const int forwardMotorPin = 5;
+const int leftMotorPin = 6;
+const int rightMotorPin = 7;
+
+int state = 0;
+const int CAMERA_CENTER_X = 158;    // Pixy2 resolution is 316x208
+const int ERROR_MARGIN = 32;        // 10% of width -- dunno if that's enough, or too much? will need testing
+
+void setup() {
+    Serial.begin(115200);
+    pixy.init();
+    headServo.attach(servoPin);
+    headServo.write(0);             // Make sure head is retracted to start
+}
+
+void loop() {
+    pixy.ccc.getBlocks();
+    bool objectDetected = pixy.ccc.numBlocks > 0; // Object of correct type detected
+
+    
+    // Here I'm using a state machine to define states of robot    
+    
+    switch (state) {
+        case 0:                 // State 0: Head retracted; waiting to see object
+            if (objectDetected) 
+            {
+                state = extendHead();
+            } 
+            else 
+            {
+                state = retractHead();
+            }
+            break;
+        
+        case 1:                 // State 1: Head moved out; no object detected
+            if (objectDetected) 
+            {
+                state = 2;
+            } 
+            else 
+            {
+                delay(5000);    // Five seconds of waiting to see if an object appears
+                state = 0;
+            }
+            break;
+        
+        case 2:                 // State 2: Head moved out, object being tracked
+            centerObject();
+            moveForward();
+            break;
+    }
+}
+
+// Helper functions for good software principles and because it makes it easier to work
+
+int extendHead() 
+{
+    headServo.write(90); // Move servo to extended position
+    delay(500);
+    return 1;
+}
+
+int retractHead() 
+{
+    headServo.write(0); // Retract servo
+    delay(500);         // makes sure enough time passes to retract
+    return 0;
+}
+
+void centerObject()     // Sending move commands to try and center the object in the middle of the camera
+{
+    if (pixy.ccc.numBlocks > 0) 
+    {
+        int objectX = pixy.ccc.blocks[0].m_x;
+        
+        if (objectX > CAMERA_CENTER_X + ERROR_MARGIN) 
+        {
+            moveMotorsRight();
+        } else if (objectX < CAMERA_CENTER_X - ERROR_MARGIN) 
+        {
+            moveMotorsLeft();
+        }
+    }
+}
+
+
+// No idea if these are the right motor commands, they're what i found online lol. can be fixed if needed.
+void moveMotorsForward() 
+{
+    digitalWrite(rightMotorPin, HIGH);
+    digitalWrite(leftMotorPin, HIGH);
+    delay(1000);
+    digitalWrite(rightMotorPin, LOW);
+    digitalWrite(leftMotorPin, LOW);
+}
+
+void moveMotorsRight() 
+{
+    digitalWrite(rightMotorPin, HIGH);
+    delay(500);
+    digitalWrite(rightMotorPin, LOW);
+}
+
+void moveMotorsLeft() 
+{
+    digitalWrite(leftMotorPin, HIGH);
+    delay(500);
+    digitalWrite(leftMotorPin, LOW);
+}
+

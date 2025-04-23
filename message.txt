@@ -1,0 +1,170 @@
+
+#include <Pixy2.h>
+#include <SPI.h>
+#include <Servo.h>
+
+Pixy2 pixy;
+Servo headServo;
+int servoPin = 6;
+
+int leftMotorPin1 = 2;
+int leftMotorPin2 = 4;
+int rightMotorPin1 = 7;
+int rightMotorPin2 = 8;
+int analogRight = 9;
+int analogLeft = 10;
+
+int CAMERA_CENTER_X = 158;    // Pixy2 resolution is 316x208
+int ERROR_MARGIN = 40;        // 32 == 10% of width, so 64 == 20%
+int servoPos = 0;
+
+int numBlocks = -1; // num of items detected by Pixy
+
+
+unsigned long previousMillis = 0;  
+const long motorInterval = 200;    
+int milliFlag = 0; // Used to check if the current millisec has been updated
+
+void setup() 
+{
+    pinMode(leftMotorPin2,   OUTPUT);
+    pinMode(leftMotorPin1,   OUTPUT);
+    pinMode(rightMotorPin1,  OUTPUT);
+    pinMode(rightMotorPin2,  OUTPUT);
+    pinMode(analogRight,     OUTPUT);
+    pinMode(analogLeft,      OUTPUT);
+    analogWrite(analogRight, 255); // Full speed for testing
+    analogWrite(analogLeft, 255);  // Full speed for testing
+
+    Serial.begin(115200);
+    pixy.init();
+
+    headServo.attach(servoPin);
+    headServo.write(0);  // Start retracted
+}
+
+void loop() 
+{
+    unsigned long currentMillis = millis();
+    numBlocks = pixy.ccc.getBlocks();
+
+    // Debug: print the current millis
+    Serial.print("Current millis: ");
+    Serial.println(currentMillis);
+
+    // If object detected and servo isn't extended, extend it
+    if (numBlocks > 0 && servoPos != 90) 
+    {
+        // Properly sets the delay timer to begin
+        if (milliFlag == 0)
+        {
+            milliFlag = 1;
+            previousMillis = currentMillis;
+
+        }
+        Serial.print("Extending head\n");
+
+        // kill motors
+        digitalWrite(rightMotorPin1, LOW);
+        digitalWrite(rightMotorPin2, LOW);
+        digitalWrite(leftMotorPin1, LOW);
+        digitalWrite(leftMotorPin2, LOW);
+
+
+        // extend
+        if (currentMillis - previousMillis >= 3000) 
+        {
+            numBlocks = pixy.ccc.getBlocks();
+            previousMillis = currentMillis;
+            milliFlag = 0;
+            numBlocks = pixy.ccc.getBlocks();
+            if(numBlocks)
+            {
+            servoPos = 90;
+            headServo.write(servoPos);
+            // servo finish
+            }
+        }
+    }
+
+    // If block is detected and head is extended
+    else if (numBlocks > 0 && servoPos == 90) 
+    {
+        int objectX = pixy.ccc.blocks[0].m_x;
+
+        Serial.print("Object X: ");
+        Serial.println(objectX);
+
+        // Move right
+        if (objectX > CAMERA_CENTER_X + ERROR_MARGIN) 
+        {
+            Serial.print("Moving Right\n");
+            digitalWrite(rightMotorPin1, HIGH);
+            digitalWrite(rightMotorPin2, LOW);
+            digitalWrite(leftMotorPin1, LOW);
+            digitalWrite(leftMotorPin2, LOW);
+            analogWrite(analogRight, 255);  
+            //analogWrite(analogLeft, 0);    
+        } 
+        else if (objectX < CAMERA_CENTER_X - ERROR_MARGIN) 
+        {
+            Serial.print("Moving Left\n");
+            digitalWrite(rightMotorPin1, LOW);
+            digitalWrite(rightMotorPin2, LOW);
+            digitalWrite(leftMotorPin1, HIGH);
+            digitalWrite(leftMotorPin2, LOW);
+          //  analogWrite(analogRight, 0);   
+            analogWrite(analogLeft, 255);  
+        } 
+        else 
+        {
+            Serial.print("Moving Forward\n");
+            digitalWrite(rightMotorPin1, HIGH);
+            digitalWrite(rightMotorPin2, LOW);
+            digitalWrite(leftMotorPin1, HIGH);
+            digitalWrite(leftMotorPin2, LOW);
+            analogWrite(analogRight, 255);  
+            analogWrite(analogLeft, 255);   
+        }
+
+
+    } 
+    // Retract head
+    else if (numBlocks == 0 && servoPos == 90) 
+    {
+        // Properly sets the delay timer to begin
+        if (milliFlag == 0)
+        {
+            milliFlag = 1;
+            previousMillis = currentMillis;
+
+        }
+
+        Serial.print("Im retracting\n");
+
+        // kill motors
+        digitalWrite(rightMotorPin1, LOW);
+        digitalWrite(rightMotorPin2, LOW);
+        digitalWrite(leftMotorPin1, LOW);
+        digitalWrite(leftMotorPin2, LOW);
+
+        // Wait before retracting the servo
+        if (currentMillis - previousMillis >= 5000) 
+        {
+            previousMillis = currentMillis;
+            milliFlag = 0;
+            numBlocks = pixy.ccc.getBlocks();
+            if (numBlocks == 0) 
+            {
+                servoPos = 0;
+                headServo.write(servoPos);
+                Serial.print("servo retracted to 0\n");
+            }
+        }
+    } 
+    else 
+    {
+        Serial.print("I don't see anything and I'm retracted already\n");
+    }
+}
+
